@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', '.tmp']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -18,6 +18,18 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+    },
+    rules: {
+      // shadcn/ui components export variants alongside components — this is
+      // expected and does not affect HMR in practice.
+      'react-refresh/only-export-components': 'warn',
+    },
+  },
+  // shadcn/ui + providers: suppress react-refresh variant export warnings
+  {
+    files: ['src/components/ui/**/*.{ts,tsx}', 'src/providers/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
     },
   },
 ])

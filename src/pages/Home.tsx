@@ -32,8 +32,11 @@ export default function Home() {
 
   useEffect(() => {
     if (searchQuery.error) {
-      const msg = searchQuery.error.message;
-      if (msg === "RATE_LIMITED") {
+      // Auditoria 2026-05-18 C9: backend agora usa TRPCError com `code` padrão
+      // em vez de `throw new Error("RATE_LIMITED")`. Detecta via `data.code` —
+      // mais robusto que comparar mensagem por string.
+      const code = (searchQuery.error as { data?: { code?: string } }).data?.code;
+      if (code === "TOO_MANY_REQUESTS") {
         toast.error("Muitas buscas. Aguarde um minuto.", {
           icon: "⚠️",
           duration: 4000,

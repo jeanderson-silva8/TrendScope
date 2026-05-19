@@ -39,3 +39,12 @@ build/
 # Test coverage
 coverage/
 .nyc_output/
+
+# Internal docs (process notes, prompts, references) — não vai pro repo público
+docs/_internal/
+
+# Tools experimentais (decidir destino futuro)
+# tools/
+
+# Cache local de repos clonados (auditoria 2026-05-18 — 201MB de submódulos não-essenciais)
+.tmp/

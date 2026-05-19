@@ -10,10 +10,18 @@ export default defineConfig({
       "@": path.resolve(templateRoot, "src"),
       "@contracts": path.resolve(templateRoot, "contracts"),
       "@assets": path.resolve(templateRoot, "attached_assets"),
+      "@db": path.resolve(templateRoot, "db"),
     },
   },
   test: {
     environment: "node",
-    include: ["api/**/*.test.ts", "api/**/*.spec.ts"],
+    // Auditoria 2026-05-18 (item 18 do checklist): cobertura de testes
+    // expandida pra server/ e tests/ — antes só rodava em api/.
+    include: [
+      "api/**/*.{test,spec}.ts",
+      "server/**/*.{test,spec}.ts",
+      "tests/**/*.{test,spec}.ts",
+    ],
+    setupFiles: ["./tests/setup.ts"],
   },
 });

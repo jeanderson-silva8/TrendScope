@@ -1,5 +1,36 @@
+# Auditoria 2026-05-18 (TrendScope) C1: impedir que .env vá pra imagem.
+# Defesa em profundidade — mesmo que o Dockerfile esqueça de excluir,
+# o .dockerignore garante que o arquivo nem chega no build context.
+
+# Build artifacts
 node_modules
 dist
 .git
 *.swp
 *.log
+
+# ── Segredos (CRÍTICO — auditoria C1) ──────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── IDE/OS ─────────────────────────────────────────────────────
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# ── Arquivos meta internos (não pertencem à imagem) ────────────
+findings.md
+progress.md
+task_plan.md
+gemini.md
+arquetetura.md
+info.md
+test-boot.mjs
+
+# ── Imagens grandes do README ──────────────────────────────────
+*.png
+
+# ── Auditoria local (preserva apenas no host) ──────────────────
+docs

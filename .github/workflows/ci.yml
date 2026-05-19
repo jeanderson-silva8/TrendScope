@@ -1,0 +1,99 @@
+name: CI
+
+# Auditoria 2026-05-18 C16 (item 20 do checklist): projeto não tinha CI nenhum.
+# Adiciona checks bloqueantes a cada push/PR antes que código ruim entre na main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+
+  tests:
+    name: Vitest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --no-audit --no-fund
+      # Envs mínimas pra Zod passar no boot. Valores fake — testes não tocam
+      # serviço externo. DATABASE_URL real usa env do GitHub Secrets quando
+      # houver teste de integração contra banco.
+      - run: npm run test
+        env:
+          DATABASE_URL: "mysql://test:test@localhost:4000/test?sslaccept=strict"
+          SERPER_API_KEY: "test-key-not-used-in-unit"
+          APP_ID: "ci-test"
+          APP_SECRET: "ci-test-secret-min-32-chars-padded-padded"
+
+  build:
+    name: Vite build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --no-audit --no-fund
+      # Build não precisa dos secrets reais — só compila TS/JSX.
+      - run: npm run build
+        env:
+          DATABASE_URL: "mysql://test:test@localhost:4000/test?sslaccept=strict"
+          SERPER_API_KEY: "build-time-placeholder"
+          APP_ID: "build-time"
+          APP_SECRET: "build-time-secret-min-32-chars-padded-padded"
+
+  security:
+    name: npm audit (high+)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # --audit-level=high: falha apenas em high/critical (low/moderate vai pro Dependabot).
+      # --omit=dev: ignora vulns de devDeps (eslint, vite) que não vão pra prod.
+      - run: npm audit --omit=dev --audit-level=high
+
+  secrets-scan:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # histórico completo
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

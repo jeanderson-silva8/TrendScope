@@ -8,22 +8,38 @@ interface Props {
 
 interface State {
   hasError: boolean;
-  error?: Error;
+  errorId?: string;
 }
 
+/**
+ * ErrorBoundary global da aplicação.
+ *
+ * Auditoria 2026-05-18 C18 (item 40 do checklist):
+ * versão anterior exibia `error.message` cru ao usuário em produção, o que
+ * pode vazar nomes de tabela, paths, queries SQL, stack traces parciais.
+ * Agora o erro é logado no console (devtools) com um correlation ID curto, e
+ * o usuário vê apenas o ID — para reportar ao suporte sem expor internals.
+ *
+ * Em produção real, `componentDidCatch` deve mandar `error` + `errorId` pra
+ * Sentry/Datadog/etc. (TODO quando houver observabilidade — item 45).
+ */
 export default class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false };
 
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+  static getDerivedStateFromError(): State {
+    // Gera correlation ID curto (8 chars) para o usuário citar ao suporte.
+    const errorId = Math.random().toString(36).slice(2, 10).toUpperCase();
+    return { hasError: true, errorId };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error("ErrorBoundary caught:", error, errorInfo);
+    // Erro completo só no console (devtools) — não vai pra UI.
+    // TODO (item 45): mandar pra Sentry/Datadog com { errorId, error, errorInfo }.
+    console.error(`ErrorBoundary [${this.state.errorId}]:`, error, errorInfo);
   }
 
   handleReset = () => {
-    this.setState({ hasError: false, error: undefined });
+    this.setState({ hasError: false, errorId: undefined });
     window.location.reload();
   };
 
@@ -40,13 +56,16 @@ export default class ErrorBoundary extends Component<Props, State> {
               Algo deu errado
             </h1>
             <p className="text-[#94A3B8] mb-6 text-sm">
-              Ocorreu um erro inesperado. Nossa equipe foi notificada.
-              Tente recarregar a página.
+              Ocorreu um erro inesperado. Tente recarregar a página. Se o
+              problema persistir, contate o suporte com o código abaixo.
             </p>
-            {this.state.error && (
-              <div className="mb-6 p-3 rounded-lg bg-[#0D1520] border border-[rgba(56,189,248,0.06)] text-left">
-                <p className="text-[#38BDF8] text-xs font-mono break-all">
-                  {this.state.error.message}
+            {this.state.errorId && (
+              <div className="mb-6 p-3 rounded-lg bg-[#0D1520] border border-[rgba(56,189,248,0.06)]">
+                <p className="text-[#94A3B8] text-xs mb-1">
+                  Código de referência:
+                </p>
+                <p className="text-[#38BDF8] text-sm font-mono">
+                  {this.state.errorId}
                 </p>
               </div>
             )}

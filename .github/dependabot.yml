@@ -1,0 +1,56 @@
+# Auditoria 2026-05-18 C16 (item 43 do checklist): atualização automática
+# de dependências. PRs semanais; reduz risco de CVEs envelhecerem em silêncio.
+
+version: 2
+updates:
+  # npm (frontend + backend convivem no mesmo package.json)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    # Agrupa updates patch/minor para reduzir ruído de PRs.
+    groups:
+      react-ecosystem:
+        patterns:
+          - "react*"
+          - "@radix-ui/*"
+        update-types:
+          - "minor"
+          - "patch"
+      trpc-ecosystem:
+        patterns:
+          - "@trpc/*"
+        update-types:
+          - "minor"
+          - "patch"
+      hono-ecosystem:
+        patterns:
+          - "hono"
+          - "@hono/*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions (actions/checkout, setup-node, gitleaks, etc.)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+      - "ci"
+
+  # Docker (FROM node:20-alpine)
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+      - "docker"

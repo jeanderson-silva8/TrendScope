@@ -1,8 +1,9 @@
-import { getDb } from "../server/queries/connection";
+// import { getDb } from "../server/queries/connection";
 // TODO: import tables from "./schema"
 
 async function seed() {
-  const db = getDb();
+  // Uncomment when adding seed data:
+  // const db = getDb();
   console.log("Seeding database...");
 
   // TODO: insert seed data, e.g.

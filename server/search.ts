@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { eq, sql, desc } from "drizzle-orm";
 import { createRouter, publicQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { searches } from "@db/schema";
 import { env } from "./lib/env";
+import { logger } from "./lib/logger";
 
 const MOCK_IMAGES = [
   "https://images.unsplash.com/photo-1504711434969-e33886168fb5?w=600&h=400&fit=crop",
@@ -53,7 +55,8 @@ function checkRateLimit(ip: string): boolean {
 }
 
 // ─── Input Sanitization ─────────────────────────────────────────
-function sanitizeQuery(q: string): string {
+// Exportada para os testes (tests/search-sanitize.test.ts). Auditoria 2026-05-18.
+export function sanitizeQuery(q: string): string {
   return q
     .replace(/[<>]/g, "")
     .replace(/\s+/g, " ")
@@ -148,7 +151,7 @@ async function fetchOgImage(targetUrl: string): Promise<string> {
 async function trySerperSearch(query: string): Promise<any /* eslint-disable-line @typescript-eslint/no-explicit-any */[] | null> {
   const apiKey = env.serperApiKey;
   if (!apiKey) {
-    console.log("[SERPER] Chave de API não configurada. Caindo para os mocks.");
+    logger.warn("Serper API key não configurada — caindo para mocks");
     return null;
   }
 
@@ -175,11 +178,11 @@ async function trySerperSearch(query: string): Promise<any /* eslint-disable-lin
     clearTimeout(timeout);
 
     if (!response.ok) {
-      console.log(`[SERPER] Falha: status ${response.status}`);
+      logger.warn("Serper retornou status não-OK", { status: response.status });
       return null;
     }
 
-    const data = await response.json() as any;
+    const data = await response.json() as { organic?: { title: string; snippet: string; link: string; imageUrl?: string; date?: string }[] };
     const organic = data.organic || [];
     
     const results: any /* eslint-disable-line @typescript-eslint/no-explicit-any */[] = [];
@@ -200,17 +203,17 @@ async function trySerperSearch(query: string): Promise<any /* eslint-disable-lin
 
     // Puxar imagens via OG apenas para os resultados que a API não retornou imagem direta
     if (results.length > 0) {
-      console.log("Fetching OG images...");
+      logger.debug("Fetching OG images");
       await Promise.all(results.map(async (r) => {
         if (!r.image) {
           r.image = await fetchOgImage(r.url);
         }
       }));
-      console.log("All OG images fetched");
+      logger.debug("All OG images fetched");
       return results;
     }
   } catch {
-    console.log(`[SERPER] Erro na rede ou parse`);
+    logger.error("Serper falha de rede ou parse");
   }
   
   return null;
@@ -251,23 +254,35 @@ export const searchRouter = createRouter({
   search: publicQuery
     .input(z.object({ query: z.string().min(1).max(200) }))
     .query(async ({ input, ctx }) => {
-      const rawIp = ctx.req.headers.get("x-forwarded-for") ||
-        ctx.req.headers.get("x-real-ip") ||
+      // Auditoria 2026-05-18 C4 (item 36 do checklist): NÃO ler `x-forwarded-for`
+      // cru — atacante forja o header e zera o rate limit a cada request.
+      // Vercel injeta `x-vercel-forwarded-for` com o IP real do cliente,
+      // sobrescrevendo qualquer valor enviado pelo cliente (não-fakeável).
+      // Em dev local (sem Vercel), cai em `x-real-ip` ou `anonymous`.
+      const ip =
+        ctx.req.headers.get("x-vercel-forwarded-for")?.trim() ||
+        ctx.req.headers.get("x-real-ip")?.trim() ||
         "anonymous";
-      const ip = rawIp.split(",")[0].trim();
 
       if (!checkRateLimit(ip)) {
-        throw new Error("RATE_LIMITED");
+        // Auditoria 2026-05-18 C9: usar TRPCError com código padrão em vez de
+        // `throw new Error("RATE_LIMITED")`. Cliente passa a tratar via
+        // `error.data.code === "TOO_MANY_REQUESTS"` (TRPCClientError tipado),
+        // o que dá toast amigável em vez de mensagem genérica de erro.
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: "Limite de buscas excedido. Aguarde 1 minuto e tente novamente.",
+        });
       }
 
       const cleanQuery = sanitizeQuery(input.query);
 
       // Helper para não travar a API se o banco (TiDB) estiver acordando (cold start)
-      const safePersist = async (q: string, res: any[]) => {
+      const safePersist = async (q: string, res: unknown[]) => {
         await Promise.race([
           persistSearch(q, res),
           new Promise((resolve) => setTimeout(resolve, 2000))
-        ]).catch(() => console.log("DB persist timeout/error ignored"));
+        ]).catch(() => logger.warn("DB persist timeout/error ignored"));
       };
 
       // Try cache first

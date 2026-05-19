@@ -33,9 +33,12 @@ export default function TypeWriter({
 
     if (isDeleting) {
       if (text === "") {
-        setIsDeleting(false);
-        setWordIndex((prev) => (prev + 1) % words.length);
-        return;
+        // Wrap in setTimeout to avoid synchronous setState in effect body
+        const resetTimer = setTimeout(() => {
+          setIsDeleting(false);
+          setWordIndex((prev) => (prev + 1) % words.length);
+        }, 0);
+        return () => clearTimeout(resetTimer);
       }
       const deleteTimer = setTimeout(() => {
         setText((prev) => prev.slice(0, -1));
@@ -44,8 +47,11 @@ export default function TypeWriter({
     }
 
     if (text === currentWord) {
-      setIsPaused(true);
-      return;
+      // Wrap in setTimeout to avoid synchronous setState in effect body
+      const doneTimer = setTimeout(() => {
+        setIsPaused(true);
+      }, 0);
+      return () => clearTimeout(doneTimer);
     }
 
     const typeTimer = setTimeout(() => {
