@@ -121,45 +121,6 @@ Documentadas em [`docs/adr/`](docs/adr/):
 
 ---
 
-## 🚀 Como Executar Localmente
-
-### 1. Requisitos
-- Node.js v18+
-- Conta no [TiDB Cloud](https://tidbcloud.com) (gratuito) ou MySQL local
-- Chave de API do [Serper.dev](https://serper.dev) (gratuito — 2.500 buscas)
-
-### 2. Configuração
-```bash
-git clone https://github.com/jeanderson-silva8/TrendScope.git
-cd TrendScope
-npm install
-```
-
-Crie `.env` na raiz (template em `.env.example`):
-
-```env
-APP_ID=qualquer-identificador-seu
-APP_SECRET=$(node -e "console.log(require('crypto').randomBytes(64).toString('base64url'))")
-DATABASE_URL=mysql://user:password@host:4000/database?sslaccept=strict
-SERPER_API_KEY=sua_chave_serper_aqui
-```
-
-> ⚠️ Sem essas 4 envs, o app **aborta no boot** com mensagem clara (fail-fast — auditoria item 6).
-
-### 3. Banco de Dados
-```bash
-npm run db:generate
-npm run db:push
-```
-
-### 4. Rodando
-```bash
-npm run dev
-```
-Acesse: `http://localhost:3000`
-
----
-
 ## 📂 Visão Geral da Estrutura
 
 ```text
