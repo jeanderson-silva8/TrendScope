@@ -565,3 +565,90 @@ Legenda: OK = mitigado com prova | P = parcial / médio | X = violação / crít
 ## Notas de método
 
 Esta passada 2 NÃO releu o projeto inteiro. Focou nos arquivos explicitamente apontados pelo prompt do orquestrador: `Dockerfile`, `.github/` (inexistente), `server/boot.ts`, `api/health.ts`, `src/components/`, `src/providers/`, `package.json`, `.dockerignore`, `vercel.json`. Para itens cobertos pela v1 (C1–C13), apenas se confirmou status e classificou na matriz — não se re-investigou. Total de tempo investido: ~10 min.
+
+---
+
+# Peer review externa (2026-05-18)
+
+> **Esta seção é um adendo posterior às passadas 1 e 2.** Auditor externo revisou o relatório + o código corrigido das 10 sessões, **encontrou achados que escaparam às duas passadas internas**. Justifica empiricamente: auditor não consegue auditar a si mesmo sem perder calibração (lição Lumina v2 — agora reforçada com 2º caso).
+
+## Achados novos da peer review
+
+### 🔴 C20 — SSRF em `fetchOgImage` (item 15 do checklist)
+
+**Arquivo:** `server/search.ts:108-149`
+
+A função `fetchOgImage(targetUrl)` faz `fetch(targetUrl)` onde `targetUrl` vem de resultado da API Serper. **Não é input direto do usuário**, mas vem de fonte externa que pode ser comprometida ou retornar dados maliciosos:
+
+- Serper retorna URL apontando para `http://169.254.169.254/latest/meta-data/...` (AWS metadata)
+- Serper retorna URL apontando para `http://localhost:3000/api/internal/...` (loopback)
+- Serper retorna URL apontando para `http://10.x.x.x/...` (rede privada RFC1918)
+
+**Por que escapou:** as passadas 1 e 2 classificaram SSRF como 🟠 parcial mencionando a função, **mas minimizaram** ("vai como JSON body p/ URL fixa Serper. Surface SSRF indireta via fetchOgImage já documentada em C10 v1"). Auditor viu o vetor e racionalizou em vez de classificar como crítico próprio.
+
+**Lição meta:** o item 15 do checklist tem `*Aplica-se a: ... qualquer feature em que o backend faz fetch(userInput).*` A palavra "userInput" sugere input direto. URLs de APIs externas (Serper, webhooks de parceiro, feeds RSS) NÃO são "userInput" mas têm exatamente o mesmo risco. A peer review motivou **expansão do item 15** no checklist universal pra cobrir explicitamente "URL de fonte externa, mesmo que não direto do usuário".
+
+**Correção aplicada:**
+- Adicionada função `isSafeFetchUrl(targetUrl)` validando schema (allowlist `http:`/`https:`) + IP blocklist (loopback, link-local, RFC1918, IPv6 ULA)
+- Validação aplicada ANTES do fetch + DEPOIS no `og:image` extraído (página pode retornar URL maliciosa secundária)
+- `redirect: "manual"` no fetch (atacante pode redirect 302 → IP privado)
+- User-Agent honesto (`TrendScope/1.0`) em vez de fingir ser `facebookexternalhit/1.1` (fechou também o C10 v1 sobre UA)
+- Fallback: screenshot via `mShots` (mesmo da versão antiga) — não vaza dados
+
+### 🟠 Cold start = burst window (refinamento do ADR-003)
+
+**Arquivo:** `docs/adr/ADR-003-rate-limit-in-memory.md`
+
+ADR-003 documentava o problema de **escala horizontal** (várias instâncias com `Map` próprio), mas não mencionava o problema **mais imediato** de **cold start zerar contador em single-instance**. Em Vercel free tier, instância dorme após ~5min de inatividade — atacante que monitora cold start consegue janela de burst.
+
+**Correção aplicada:** ADR-003 atualizado com seção explicando "cold start = `new Map()` vazio = contador zerado pra TODOS os IPs" + tabela de trade-offs expandida com (a) botnet, (b) cold start, (c) escala horizontal como 3 vetores distintos.
+
+### 🟠 ADR-004 — CSP `'unsafe-inline'` em `script-src` (item 32 do checklist)
+
+**Arquivo:** `vercel.json:11`
+
+Mesmo trade-off do Lumina ADR-003: Vite gera `<script type="module">` inline no `index.html`; sem `'unsafe-inline'`, app não carrega. Auditoria internamente já estava ciente, mas não tinha ADR dedicado documentando — peer review pediu formalização.
+
+**Correção aplicada:** [ADR-004 criado](adr/ADR-004-csp-unsafe-inline.md) com gatilhos objetivos de revisita (PII real, feature de input renderizado como HTML, dependência nova adicionada).
+
+### 🟢 Split `/api/health/live` + `/api/health/ready` (item 39 do checklist)
+
+**Arquivo:** `server/boot.ts:68`
+
+TODO de fechamento de item 39 do checklist. Auditoria deixou como pendência mencionada no Dockerfile e no boot.ts; peer review pediu fechamento.
+
+**Correção aplicada:** boot.ts agora expõe 3 endpoints:
+- `/api/health` — alias backward-compat (= `/live`); mantém Dockerfile HEALTHCHECK existente funcionando
+- `/api/health/live` — sempre 200 se processo está respondendo (orquestrador decide reiniciar container)
+- `/api/health/ready` — checa SERPER_API_KEY presente + ping leve no TiDB com timeout 1.5s; retorna 503 se falhar (LB tira do tráfego)
+
+## Tabela atualizada após peer review
+
+| Categoria | Após passada 1+2 | Após peer review |
+|---|---|---|
+| ✅ Confirmados | 4 | 4 |
+| 🟠 Parciais | 4 | 3 (item 39 fechado) |
+| 🔴 Críticos | 11 | **12** (C20 SSRF novo) |
+| 🟢 Polimentos | 8 | 8 |
+| Dívidas em ADR | 3 (ADR-001, 002, 003) | **4** (+ ADR-004 CSP) |
+
+## Itens novos / expandidos no framework universal
+
+Peer review expandiu **2 itens existentes** no checklist universal (sem inflar contagem):
+
+| Item | Tipo de mudança | O que entrou |
+|---|---|---|
+| **15 (SSRF)** | Expansão | Cobertura explícita de "URL vem de API externa, não direto do usuário" — supply chain SSRF |
+| **36 (rate limit por usuário)** | Expansão | Nuance de "cold start = burst window" específica de serverless — não é só problema de escala horizontal |
+
+## Lição meta cumulativa
+
+Esta é a **segunda peer review externa** (depois do Lumina v2) que pegou achado crítico onde a auditoria interna minimizou. Padrão:
+
+1. Auditor (eu) executou as 2 passadas (padrão + cobertura completa).
+2. Auditor (eu) classificou o achado como **🟠 parcial** apesar de tocar item 15 do próprio checklist universal que escrevi.
+3. Peer review externa (humano + outro LLM ou tu mesmo com 2 dias de descanso) classifica corretamente como 🔴 crítico.
+
+**Reforça as 2 regras:**
+- **Peer review externa não é "extra"** — é parte do método em projetos que importam. Modo paranoico (`PROMPT_AUDITORIA_PARANOICO.md`) tenta automatizar via auto-revisão, mas mesmo paranoico precisa de olho fresco eventualmente.
+- **Itens do checklist universal precisam de "Aplica-se a:" generoso**, não restritivo. Item 15 só dizia "userInput" — palavra que sugeriu ao auditor que API externa não conta. Agora a expansão fecha esse buraco no próprio framework.

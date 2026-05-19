@@ -8,7 +8,13 @@
 
 Auditoria 2026-05-18 levantou dois problemas relacionados:
 
-1. **Rate limit in-memory por instância:** `rateMap = new Map()` em `server/search.ts:39`. Vercel serverless escala horizontalmente (várias instâncias rodando em paralelo), cada uma com seu próprio `Map`. Atacante consegue N × limite × instâncias. Em cold start, contador zera — burst de N requests sucessivas zera o limite.
+1. **Rate limit in-memory por instância:** `rateMap = new Map()` em `server/search.ts:39`. Vercel serverless escala horizontalmente (várias instâncias rodando em paralelo), cada uma com seu próprio `Map`. Atacante consegue N × limite × instâncias.
+
+   **Peer review 2026-05-18 adicionou nuance importante** sobre cold start em serverless:
+   - Cold start = `new Map()` vazio = contador zerado para TODOS os IPs
+   - Vercel free tier mantém instância "quente" só por ~5min de inatividade
+   - **Janela de burst pós-cold-start**: atacante que monitora o tempo (ex: pinga `/api/health` periodicamente sem requests reais até a instância dormir, depois dispara N requests imediatamente após primeira chamada) consegue uma janela onde o limite zera
+   - Não é o mesmo problema que escala horizontal — é um problema ADICIONAL, mais imediato (acontece em deploy single-instance também)
 
 2. **Queries dos usuários persistidas em claro:** `searches.query` (TiDB) guarda a string exata digitada. Sem hash, sem TTL. Queries podem revelar intenção pessoal sensível ("ansiedade tratamento", "saída de relacionamento abusivo", "cnpj pessoa X").
 
@@ -49,7 +55,8 @@ Esta decisão **expira** quando:
 
 | O que se ganha | O que se perde |
 |---|---|
-| Setup simples (sem Redis na infra) | Rate limit pode ser driblado por atacante com IPs diversos OU por timing de cold start |
+| Setup simples (sem Redis na infra) | Rate limit pode ser driblado por: (a) atacante com IPs diversos (botnet); (b) timing de cold start (janela de burst pós-cold-start em instância recém-acordada); (c) escala horizontal (cada instância tem contador próprio) |
+| Funciona bem em instância "quente" com tráfego constante | Em free tier com tráfego baixo, instâncias dormem em ~5min — janela de burst aparece com frequência |
 | Persistência simples de queries (debugging, popularidade) | Dump do banco vaza queries crus — sensível se for PII |
 | Foco em entregar features de UX | Item 35 (rate limit por usuário) e item 49 (retenção LGPD) ficam em parcial |
 

@@ -105,35 +105,122 @@ function generateMockResults(query: string) {
   }));
 }
 
+/**
+ * Valida que uma URL é segura para o servidor fazer fetch (anti-SSRF).
+ *
+ * Peer review 2026-05-18: o auditor identificou que `fetchOgImage(item.link)`
+ * faz fetch de URL retornada pela API Serper. Mesmo a URL não vindo direto
+ * do usuário, ela vem de fonte externa — se Serper for comprometida (ou
+ * responder com URL maliciosa), o servidor faz fetch de recursos internos:
+ *   - http://169.254.169.254/... (AWS metadata)
+ *   - http://localhost:3000/api/... (loopback)
+ *   - http://10.x.x.x/... (rede privada RFC1918)
+ *
+ * Vercel hoje tem superfície reduzida (sem metadata service clássico), mas:
+ *   1. Defesa em profundidade: validar mesmo assim
+ *   2. Portabilidade: se migrar pra EC2/GCP/Azure, a defesa já está lá
+ *   3. Item 15 do checklist universal (SSRF) cobre exatamente esta classe
+ *
+ * Esta função é o equivalente do "scheme allowlist + IP blocklist" do item 15.
+ */
+function isSafeFetchUrl(targetUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    return false;
+  }
+
+  // Allowlist de schemes: só http/https. Bloqueia file://, ftp://, gopher://, data:, etc.
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return false;
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  // Blocklist de hostnames especiais
+  if (hostname === "localhost" || hostname === "0.0.0.0" || hostname === "[::1]" || hostname === "::1") {
+    return false;
+  }
+
+  // IPv4: loopback, link-local (AWS/GCP metadata), RFC1918 privados
+  // 127.0.0.0/8 — loopback
+  // 169.254.0.0/16 — link-local (inclui metadata 169.254.169.254)
+  // 10.0.0.0/8 — privado
+  // 172.16.0.0/12 — privado
+  // 192.168.0.0/16 — privado
+  if (
+    hostname.startsWith("127.") ||
+    hostname.startsWith("169.254.") ||
+    hostname.startsWith("10.") ||
+    hostname.startsWith("192.168.")
+  ) {
+    return false;
+  }
+  // 172.16-31.x.x
+  const m = hostname.match(/^172\.(\d{1,3})\./);
+  if (m) {
+    const second = parseInt(m[1], 10);
+    if (second >= 16 && second <= 31) return false;
+  }
+
+  // IPv6: loopback + link-local + ULA + reservado
+  if (hostname.startsWith("fc") || hostname.startsWith("fd") || hostname.startsWith("fe80")) {
+    return false;
+  }
+
+  return true;
+}
+
 async function fetchOgImage(targetUrl: string): Promise<string> {
+  // Fallback usado em qualquer rejeição (URL inválida, IP privado, timeout, etc.)
+  const fallback = `https://s0.wordpress.com/mshots/v1/${encodeURIComponent(targetUrl)}?w=600&h=400`;
+
+  // Peer review 2026-05-18: validação anti-SSRF antes do fetch.
+  // Item 15 do checklist universal — aplica também a URLs vindas de APIs externas
+  // (não só de input direto do usuário). Se Serper retornar URL apontando pra
+  // metadata cloud ou rede interna, o fetch é abortado.
+  if (!isSafeFetchUrl(targetUrl)) {
+    logger.warn("fetchOgImage rejeitou URL não-segura (SSRF guard)", { targetUrl });
+    return fallback;
+  }
+
   try {
     const controller = new AbortController();
     // 2.5 segundos limite para não travar a pesquisa principal, cobrindo o body tambem
-    const timeout = setTimeout(() => controller.abort(), 2500); 
-    
-    // Fingir ser o scraper do Facebook/Twitter ajuda a bypassar captchas para tags OG
+    const timeout = setTimeout(() => controller.abort(), 2500);
+
+    // User-Agent identificável (não fingir ser facebookexternalhit — auditoria C10 v1)
     const res = await fetch(targetUrl, {
       headers: {
-        "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+        "User-Agent": "TrendScope/1.0 (+https://trend-scope.vercel.app)",
         "Accept": "text/html",
       },
       signal: controller.signal,
+      redirect: "manual", // ⚠️ Não seguir redirects automaticamente — atacante pode
+                          // redirecionar de URL pública pra IP privado (TOCTOU clássico).
     }).catch(() => null);
 
     if (res && res.ok) {
       const html = await res.text().catch(() => "");
       clearTimeout(timeout);
-      
+
       // Expressões Regulares seguras para extrair a meta tag de imagem
-      const ogMatch = 
-        html.match(/<meta\s+(?:property|name)=["'](?:og:image|twitter:image)["']\s+content=["']([^"']+)["']/i) || 
+      const ogMatch =
+        html.match(/<meta\s+(?:property|name)=["'](?:og:image|twitter:image)["']\s+content=["']([^"']+)["']/i) ||
         html.match(/<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["'](?:og:image|twitter:image)["']/i);
-      
+
       if (ogMatch && ogMatch[1]) {
         let imageUrl = ogMatch[1];
         if (imageUrl.startsWith("/")) {
            const baseUrl = new URL(targetUrl).origin;
            imageUrl = baseUrl + (imageUrl.startsWith("//") ? imageUrl.substring(1) : imageUrl);
+        }
+        // Revalida a imageUrl extraída — a página pode ter `og:image` apontando
+        // pra recurso interno. Mesma defesa, agora aplicada à URL secundária.
+        if (!isSafeFetchUrl(imageUrl)) {
+          logger.warn("fetchOgImage rejeitou imageUrl extraída (SSRF guard)", { imageUrl });
+          return fallback;
         }
         return imageUrl;
       }
@@ -143,9 +230,8 @@ async function fetchOgImage(targetUrl: string): Promise<string> {
   } catch {
     // Ignora se der erro de timeout ou rede
   }
-  
-  // Fallback 1: Screenshot elegante do site gerado na hora
-  return `https://s0.wordpress.com/mshots/v1/${encodeURIComponent(targetUrl)}?w=600&h=400`;
+
+  return fallback;
 }
 
 async function trySerperSearch(query: string): Promise<any /* eslint-disable-line @typescript-eslint/no-explicit-any */[] | null> {
