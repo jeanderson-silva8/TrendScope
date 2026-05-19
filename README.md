@@ -18,7 +18,7 @@ Resolve o problema do "excesso de ruído" usando a API Google via Serper.dev com
 
 ---
 
-## ⚠️ Escopo desta versão (honestidade primeiro)
+## ⚠️ Escopo desta versão
 
 **Demo público sem autenticação.** Decisões de escopo conscientes, documentadas em ADRs:
 
