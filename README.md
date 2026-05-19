@@ -43,6 +43,34 @@ Adicionalmente, a persistência no banco (TiDB) opera com **`Promise.race` de 2 
 
 ---
 
+## 🧪 Testes
+
+```bash
+npm test          # 15 testes: env fail-fast, sanitização, /api/health, CORS allowlist
+```
+
+**Cobertura de cenários adversariais e regressão:**
+
+- Envs ausentes (`DATABASE_URL` vazia, `APP_SECRET` < 32 chars) → `process.exit(1)` no boot com mensagem clara, listando TODOS os erros (não para no primeiro)
+- Tags HTML no input (`<script>`, `<b>`) → removidas pelo `sanitizeQuery` antes do Drizzle
+- Query > 200 chars → truncada (anti payload bomb no nível de input)
+- Unicode (acentos, emojis) → preservados (sem sanitização agressiva demais)
+- `GET /api/health` → 200 + `{ ok: true, ts }`
+- `/api/rota-inexistente` → 404 com `{ error: "Not Found" }` (catchall do Hono)
+- Headers de segurança presentes na resposta (`Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`)
+- CORS allowlist: origem `http://localhost:5173` (autorizada) → recebe `Access-Control-Allow-Origin`
+- CORS allowlist: origem `https://atacante-malicioso.com` (não-autorizada) → **NÃO** recebe `Access-Control-Allow-Origin` (browser bloqueia)
+
+**TODO (próxima sessão de testes):**
+
+- Rate limit dispara após 31ª req no mesmo minuto (precisa `vi.useFakeTimers()`)
+- Cache hit retorna mesmo payload na 2ª chamada da mesma query
+- Serper API key inválida → fallback pra mocks contextualizados (`isMock: true`)
+
+**CI roda em [`.github/workflows/ci.yml`](.github/workflows/ci.yml):** 6 jobs bloqueantes em paralelo a cada push/PR — `eslint`, `tsc --build`, `vitest run`, `vite build`, `npm audit --omit=dev --audit-level=high`, `gitleaks` (secret scanning no histórico completo). Nenhum desses existia antes da auditoria 2026-05-18 (item C16).
+
+---
+
 ## 🔒 Segurança
 
 Defesas configuradas e **rodando em produção** (auditoria 2026-05-18 confirmou paridade dev/prod após unificação do backend):
