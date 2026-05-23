@@ -188,6 +188,59 @@ Documentadas em [`docs/adr/`](docs/adr/):
 
 ---
 
+## 🚀 Como Executar Localmente
+
+### Requisitos
+- Node.js 20+
+- npm 10+
+- Banco de dados MySQL (local ou na nuvem, como o TiDB Cloud)
+- API Key da Serper.dev (para buscas do Google)
+
+### Variáveis de ambiente
+
+Crie um arquivo `.env` na raiz do projeto com base no arquivo `.env.example` fornecido:
+
+```dotenv
+# Backend
+APP_ID=seu_app_id_aqui
+APP_SECRET=seu_secret_jwt_aqui
+
+# Database (TiDB Cloud / MySQL)
+DATABASE_URL="mysql://USUARIO:SENHA@gateway.tidbcloud.com:4000/trendscope?sslaccept=strict"
+
+# Serper.dev API Key (busca Google)
+SERPER_API_KEY="sua_chave_serper_aqui"
+```
+
+⚠️ **Nunca commite o `.env`.**
+
+### Rodando
+
+1. Instale todas as dependências do projeto:
+   ```bash
+   npm install
+   ```
+
+2. Configure as tabelas do banco de dados (Drizzle ORM):
+   ```bash
+   npm run db:push    # empurra o schema para o banco de dados configurado
+   ```
+
+3. Inicie o servidor local integrado (Hono + Vite):
+   ```bash
+   npm run dev
+   ```
+
+Acesse `http://localhost:5173` no seu navegador. O Vite fará o proxy das rotas de API para o servidor Hono local automaticamente.
+
+### Testes
+
+Para executar os testes automatizados da aplicação:
+
+```bash
+npm run test
+```
+
 ## 👑 Autor
 
 **Jeanderson Silva** 🤓✍️
