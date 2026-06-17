@@ -6,6 +6,15 @@
 🟢 **LIVE DEMO:** [Acesse o TrendScope Ao Vivo Aqui](https://trend-scope.vercel.app)
 🛡️ **Auditoria de Segurança Aplicada:** [Veja a Auditoria 2026-05-18 e o plano de ação executado](docs/AUDIT_REPORT_2026-05-18.md)
 
+<div align="center">
+  <div style="max-width: 800px; background-color: #161b22; border: 1px solid #30363d; border-bottom: none; border-top-left-radius: 8px; border-top-right-radius: 8px; padding: 10px; font-family: monospace; font-size: 13px; color: #8b949e; text-align: left;">
+    🔴 &nbsp; 🟡 &nbsp; 🟢 &nbsp;&nbsp;&nbsp; <b>~/trendscope</b>
+  </div>
+  <div style="max-width: 800px; border: 1px solid #30363d; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; overflow: hidden; line-height: 0;">
+    <img src="assets/trendscope.gif" width="100%" height="auto" alt="TrendScope Demo" />
+  </div>
+</div>
+
 ---
 
 ## 🛑 O Problema
