@@ -16,7 +16,7 @@
 # ───────────────────────────────────────────────────────────────────────────────
 # Stage 1 — deps: instala node_modules do registry oficial (npmjs.org)
 # ───────────────────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:25-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -45,7 +45,7 @@ RUN npm run build
 # ───────────────────────────────────────────────────────────────────────────────
 # Stage 3 — production: imagem mínima, sem toolchain, usuário não-root
 # ───────────────────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS production
+FROM node:25-alpine AS production
 WORKDIR /app
 
 # wget para healthcheck (Alpine já tem busybox-wget, mas reforçamos)
